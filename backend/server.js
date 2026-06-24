@@ -1,174 +1,181 @@
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql2")
-let erros=0;
-let block = false
- 
+const mysql = require("mysql2");
 const app = express();
 app.use(cors());
 app.use(express.json());
- 
 const db = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "",
-    database: "natacao"
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "natacao",
+    port: process.env.DB_PORT || 3306,
+    ssl: process.env.DB_HOST ? {rejectUnauthorized: false} : null
 });
 
- db.connect((erro) => {
-    if(erro) {
+db.connect((erro) => {
+    if(erro){
         console.log("Erro ao conectar");
         console.log(erro);
         return;
     }
-     console.log("Conectado com sucesso");
- });
+    console.log("Conectado com sucesso");
+    const criarTabelaSQL = `
+    CREATE TABLE IF NOT EXISTS alunos(
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    idade INT NOT NULL,
+    telefone INT NOT NULL,
+    nivel VARCHAR(50) NOT NULL,
+    horario VARCHAR(50) NOT NULL,
+    ativo BOOLEAN DEFAULT TRUE
+    );
+    `;
+    db.query(criarTabelaSQL, (erroTabela) => {
+        if(erroTabela){
+            console.log("Erro de verificação ou criação da tabela", erroTabela);
+        } else {
+            console.log("Tabela pronta para uso");
+        }
+    })
+});
 
-
- 
 app.get("/", (req, res) => {
     res.json({
-        mensagem: "API funcionando"
+        mensagem: "API Funcionando."
     })
 })
- 
-app.post("/alunos", (req,res) => {
-    const {
-        nome, idade, nivel, horario, telefone
+
+app.post("/alunos", (req, res) => {
+    const{
+        nome, idade, telefone, nivel, horario
     } = req.body
- 
-    if (!nome || !idade || !nivel || !horario || !telefone) {
-        return res.status(400).json({
-            erro: "Preencha todos os campos."
-        })
-    }
- 
-        if (idade < 5) {
+        if(!nome || !idade || !telefone || !nivel || !horario){
             return res.status(400).json({
-                erro: "Aluno abaixo da idade permitida."
+                erro: "Preencha todos os campos."
             })
         }
-
-        if (idade > 100) {
+        if(idade < 5){
             return res.status(400).json({
-                erro: "Aluno acima da idade permitida."
+                 erro: "O aluno deve ter 5 anos ou mais."
             })
         }
-
-                if (nome.length < 3) {
+        if(idade > 100){
             return res.status(400).json({
-                erro: "Menos de 3 letras no nome não são permitidas"
+                 erro: "O aluno deve ter menos de 100 anos."
             })
         }
- 
-        const verificaSQL = "SELECT * FROM alunos WHERE nome = ?";
-        db.query(verificaSQL, [nome],
-        (erro, resultado) => {
-            if (erro) {
+        if(nome.length < 3){
+            return res.status(400).json({
+                 erro: "O nome deve possuir mais de 3 caracteres."
+            })
+        }
+        
+        const verificaSQL = "select * from alunos where nome = ?";
+        db.query(verificaSQL, [nome], (erro, resultado) =>{
+            if(erro){
                 return res.status(500).json(erro);
             }
-            if (resultado.lenght > 0) {
+            if(resultado.legth > 0){
                 return res.status(400).json({
                     erro: "Já existe este nome cadastrado no banco"
                 })
             }
-            const inserirSQL = 'insert into alunos (nome, idade, nivel, horario, telefone) values(?, ?, ?, ?, ?)'
-            db.query (inserirSQL, [nome, idade, nivel, horario, telefone], (erro,resultado) => {
-                if (erro) {
+            const inserirSQL = `insert into alunos (nome, idade, telefone, nivel, horario) values(?, ?, ?, ?, ?)`;
+            db.query(inserirSQL, [nome, idade, telefone, nivel, horario], (erro, resultado) => {
+                if(erro){
                     return res.status(500).json(erro);
                 }
                 res.status(201).json({
-                    mensagem: "Aluno caastrado",
+                    mensagem: "Aluno cadastrado",
                     id: resultado.insertId
-                })
-            })
-        })
-    })
- 
-    app.get("/alunos", (req,res) => {
-        db.query(
-            "SELECT * FROM alunos", (erro, resultado) => {
-                if(erro) {
-                    return res.status(500).json(erro);
-                }
-                res.json(resultado);
+                });
             });
-    });
+        });    
+});
 
-    app.delete("/alunos/:id", (req, res) =>{
-       const id = req.params.id;
-     db.query("DELETE FROM alunos where id = ?", [id], (erro, resultado) => {
-        if(erro) {
- return res.status(500).json(erro);
-        } if (resultado.affectedRows === 0) {
-           return res.status(404).json({
-            erro:"Aluno não encontrado"
-           })
+app.get("/alunos", (req, res) => {
+    db.query(
+        "select * from alunos", (erro, resultado) => {
+            if(erro){
+                return res.status(500).json(erro);
+            }
+            res.json(resultado);
+        });
+});
+
+app.delete("/alunos/:id", (req, res) => {
+    const id = req.params.id;
+    db.query("delete from alunos where id = ?", [id], (erro, resultado) => {
+        if(erro){
+            return res.status(500).json(erro);
+        } if (resultado.affectedRows === 0){
+            return res.status(404).json({
+                erro: "Aluno não encontrado"
+            })
         }
         res.json({
             mensagem: "Aluno removido"
         });
-
-     });
     });
-    
-    app.put("/alunos/:id", (req, res) => {
-        const id = Number(req.params.id)
-        db.query("SELECT ativo FROM alunos WHERE id = ?", [id], (erro, resultado) => {
-            if (erro) {
+});
+
+app.put("/alunos/:id", (req, res) => {
+    const id = req.params.id;
+    db.query("select ativo from alunos where id = ?", [id], (erro, resultado) =>{
+        if(erro){
+            return res.status(500).json(erro);
+        }
+        if(resultado.length === 0){
+            return res.status(404).json({
+                erro: "Aluno não encontrado"
+            });
+        }
+        const novoStatus = resultado[0].ativo ? 0:1;
+        db.query("update alunos set ativo = ? where id = ?", [novoStatus, id], (erro) =>{
+            if(erro){
                 return res.status(500).json(erro);
             }
-            if (resultado.lenght === 0) {
-                return res.status(404).json({
-                    erro: 'Aluno não encontrado'
-                })
-            }
-            const novoStatus = resultado[0].ativo ? 0 : 1;
-            db.query("UPDATE alunos SET ativo = ? WHERE id = ?", [novoStatus, id], (erro) => {
-                if (erro){
-                    return res.status(500).json(erro);
-                }
-                res.json({
-                    mensagem: "Aluno atualizado"
-                })
-            })
+            res.json({
+                mensagem: "Aluno atualizado"
+            });
+        });
+    });
+});
+
+let incorretas = 0;
+let bloqueado = false;
+
+app.post("/admin", (req, res) => {
+    const {senha} = req.body; 
+    if(bloqueado === true){
+        return res.status(403).json({
+            erro: "Tentativas excedidas."
         })
-    })
-    if (block===false){
-    app.post ("/admin", (req, res) => {
-        const {senha} = req.body;
+    } 
         if(!senha){
-            return res.status(400).json({
-                erro: "Informe a senha."
-            })
-        }
-        
-          if (erros>=3){
-            block=true
-        }
-
-        if(senha === "a" && erros<3){
-            erros = 0
-            return res.json({autenticado: true});
-            
-            
-        }
-
-        else{
-            erros++
-              return res.status(401).json({
-            erro: "Erro!"
+        return res.status(400).json({
+            erro: "Informe a senha."
         })
-
-      
-         
-            
-        }
-    })
     }
-
-    app.listen(3000, () => {
-        console.log("Servidor rodando em: ")
-        console.log("http://localhost:3000")
-    
+    if(senha === "admin123"){
+        incorretas = 0
+        return res.json({autenticado: true});
+    }
+    incorretas++;
+    if(incorretas >= 3){
+        bloqueado = true;
+        return res.status(403).json({
+            erro: "Sistema bloqueado."
+        })
+    }
+    return res.status(401).json({
+        erro: "Senha incorreta."
     })
+})
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("Servidor rodando em: ")
+    console.log(`porta ${PORT}`)
+})
